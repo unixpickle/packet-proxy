@@ -97,6 +97,8 @@ func (p *Proxy) RunTCP() {
 	essentials.Must(err)
 	defer listener.Close()
 
+	log.Printf("listening on TCP address %s...", tcpAddr)
+
 	for {
 		conn, err := listener.AcceptTCP()
 		essentials.Must(err)
@@ -108,8 +110,39 @@ func (p *Proxy) HandleTCP(conn *net.TCPConn) {
 	log.Printf("TCP connection established from: %s", conn.RemoteAddr())
 	defer log.Printf("TCP connection finished: %s", conn.RemoteAddr())
 
-	// TODO: establish proxy connection.
-	// TODO: pipe data back and forth with time-based buffering.
+	remoteAddr, err := net.ResolveTCPAddr("tcp", p.TargetAddr)
+	essentials.Must(err)
+	proxyConn, err := net.DialTCP("tcp", nil, remoteAddr)
+	essentials.Must(err)
+
+	defer proxyConn.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		defer proxyConn.Close()
+		for inPacket := range ReceiveBursts(conn, p.TCPTimeout) {
+			p.SavePacket("tcp", conn.RemoteAddr(), "in", inPacket)
+			if WriteOrClose(proxyConn, inPacket) != nil {
+				return
+			}
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		defer conn.Close()
+		for outPacket := range ReceiveBursts(proxyConn, p.TCPTimeout) {
+			p.SavePacket("tcp", conn.RemoteAddr(), "out", outPacket)
+			if WriteOrClose(conn, outPacket) != nil {
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
 }
 
 func (p *Proxy) SavePacket(network string, addr fmt.Stringer, direction string, data []byte) {
