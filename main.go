@@ -55,7 +55,10 @@ func (p *Proxy) RunUDP() {
 		b := make([]byte, 0x10000)
 		oob := make([]byte, 0x10000)
 		n, oobn, _, addr, err := udpConn.ReadMsgUDP(b, oob)
-		essentials.Must(err)
+		if err != nil {
+			log.Printf("listener recv UDP error: %s", err)
+			continue
+		}
 
 		addrStr := addr.String()
 		if _, ok := outgoing[addrStr]; !ok {
@@ -68,7 +71,10 @@ func (p *Proxy) RunUDP() {
 					b := make([]byte, 0x10000)
 					oob := make([]byte, 0x10000)
 					n, oobn, _, _, err := proxyConn.ReadMsgUDP(b, oob)
-					essentials.Must(err)
+					if err != nil {
+						log.Printf("proxy recv UDP error: %s", err)
+						continue
+					}
 					_, _, err = udpConn.WriteMsgUDP(b[:n], oob[:oobn], addr)
 					essentials.Must(err)
 
@@ -80,7 +86,7 @@ func (p *Proxy) RunUDP() {
 			}()
 		}
 		proxyConn := outgoing[addrStr]
-		_, _, err = proxyConn.WriteMsgUDP(b[:n], oob[:oobn], addr)
+		_, _, err = proxyConn.WriteMsgUDP(b[:n], oob[:oobn], nil)
 		essentials.Must(err)
 
 		p.SavePacket("udp", addr, "in", b[:n])
